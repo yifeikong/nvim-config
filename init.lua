@@ -22,6 +22,49 @@ vim.g.mapleader = " "
 vim.g.maplocalleader = "\\"
 vim.g.neovide_cursor_animation_length = 0
 
+local function check_backspace()
+  local col = vim.fn.col(".") - 1
+  if col == 0 then
+    return true
+  end
+
+  return vim.fn.getline("."):sub(col, col):match("%s") ~= nil
+end
+
+local function has_lsp_method(bufnr, method)
+  return not vim.tbl_isempty(vim.lsp.get_clients({ bufnr = bufnr, method = method }))
+end
+
+local function show_documentation()
+  if has_lsp_method(0, vim.lsp.protocol.Methods.textDocument_hover) then
+    vim.lsp.buf.hover()
+    return
+  end
+
+  vim.api.nvim_feedkeys("K", "n", false)
+end
+
+local function set_lsp_folds(bufnr)
+  for _, win in ipairs(vim.fn.win_findbuf(bufnr)) do
+    vim.wo[win].foldmethod = "expr"
+    vim.wo[win].foldexpr = "v:lua.vim.lsp.foldexpr()"
+  end
+end
+
+local function organize_imports()
+  vim.lsp.buf.code_action({
+    apply = true,
+    context = {
+      only = {
+        "source.organizeImports",
+        "source.organizeImports.ts",
+        "source.sortImports",
+      },
+      diagnostics = vim.diagnostic.get(0),
+    },
+  })
+end
+
 -- Setup lazy.nvim
 require("lazy").setup({
   -- automatically check for plugin updates
@@ -89,11 +132,8 @@ require("lazy").setup({
       opts = {},
     },
     {
-      "neoclide/coc.nvim",
-      branch = "release",
-    },
-    {
       "neanias/everforest-nvim",
+      main = "everforest",
       lazy = false,
       priority = 1000,
       opts = {},
@@ -123,9 +163,11 @@ require("lazy").setup({
         require'window-picker'.setup()
       end,
     },
-    "benomahony/uv.nvim",
-    opts = {
-      picker_integration = true,
+    {
+      "benomahony/uv.nvim",
+      opts = {
+        picker_integration = true,
+      },
     },
   },
 
@@ -134,7 +176,17 @@ require("lazy").setup({
   install = { colorscheme = { "habamax" } },
 })
 
-vim.cmd.source("~/.dotfiles/vim/nvimrc")
+require("ts_command_palette").setup()
+vim.keymap.set("n", "<leader>pc", "<cmd>TSCommandPalette<cr>", {
+  silent = true,
+  desc = "Command Palette",
+})
+
+vim.cmd.source("~/.dotfiles/vim/vimrc_base")
+vim.opt.spell = true
+vim.opt.updatetime = 300
+vim.opt.signcolumn = "yes"
+vim.opt.completeopt = "menuone,popup,fuzzy"
 vim.cmd.colorscheme("everforest")
 
 -- local highlight = {
@@ -162,6 +214,317 @@ vim.cmd.colorscheme("everforest")
 --
 -- require("ibl").setup { indent = { highlight = highlight } }
 -- require("ibl").setup()
+
+-- Ported from nvimrc
+vim.keymap.set("n", "<leader>a", "<cmd>Telescope live_grep<cr>", { silent = true, desc = "Live Grep" })
+vim.keymap.set("n", "<leader>A", "<cmd>Telescope resume<cr>", { silent = true, desc = "Resume Telescope" })
+vim.keymap.set("n", "<C-p>", "<cmd>Telescope find_files<cr>", { silent = true, desc = "Find Files" })
+vim.keymap.set("n", "<leader>fb", "<cmd>Telescope buffers<cr>", { silent = true, desc = "Buffers" })
+vim.keymap.set("n", "<leader>fh", "<cmd>Telescope help_tags<cr>", { silent = true, desc = "Help Tags" })
+vim.keymap.set("", "<C-n>", "<cmd>Neotree filesystem toggle<cr>", { silent = true, desc = "Toggle Neo-tree" })
+vim.keymap.set("n", "<leader>r", "<cmd>Neotree reveal<cr>", { silent = true, desc = "Reveal In Neo-tree" })
+vim.keymap.set("n", "<leader>b", "<cmd>BlameToggle window<cr>", { silent = true, desc = "Toggle Blame" })
+
+vim.keymap.set("n", "<C-t><C-c>", "<cmd>TermOpen<cr>", { silent = true, desc = "Open Terminal" })
+vim.keymap.set("t", "<C-t><C-c>", "<C-\\><C-n><cmd>TermOpen<cr>", { silent = true, desc = "Open Terminal" })
+vim.keymap.set("n", "<C-t><C-p>", "<cmd>FloatermPrev<cr>", { silent = true, desc = "Previous Floaterm" })
+vim.keymap.set("t", "<C-t><C-p>", "<C-\\><C-n><cmd>FloatermPrev<cr>", { silent = true, desc = "Previous Floaterm" })
+vim.keymap.set("n", "<C-t><C-t>", "<cmd>TermToggle<cr>", { silent = true, desc = "Toggle Terminal" })
+vim.keymap.set("t", "<C-t><C-t>", "<C-\\><C-n><cmd>TermToggle<cr>", { silent = true, desc = "Toggle Terminal" })
+vim.keymap.set("n", "<C-t><C-n>", "<cmd>FloatermNext<cr>", { silent = true, desc = "Next Floaterm" })
+vim.keymap.set("t", "<C-t><C-n>", "<C-\\><C-n><cmd>FloatermNext<cr>", { silent = true, desc = "Next Floaterm" })
+
+vim.keymap.set("", "zz", "<cmd>noautocmd wa<cr>", { silent = true, desc = "Write All Without Autocmds" })
+vim.keymap.set("", "ZZ", "<cmd>wa<cr>", { silent = true, desc = "Write All" })
+vim.keymap.set("t", "<Esc>", "<C-\\><C-n>", { silent = true, desc = "Terminal Normal Mode" })
+
+vim.keymap.set("i", "<Tab>", function()
+  if vim.fn.pumvisible() == 1 then
+    return "<C-n>"
+  end
+
+  if check_backspace() or vim.bo.omnifunc == "" then
+    return "<Tab>"
+  end
+
+  return "<C-x><C-o>"
+end, { expr = true, silent = true, desc = "Next Completion Item" })
+
+vim.keymap.set("i", "<S-Tab>", function()
+  if vim.fn.pumvisible() == 1 then
+    return "<C-p>"
+  end
+
+  return "<C-h>"
+end, { expr = true, silent = true, desc = "Previous Completion Item" })
+
+vim.keymap.set("i", "<CR>", function()
+  if vim.fn.pumvisible() == 1 then
+    return "<C-y>"
+  end
+
+  return "<C-g>u<CR>"
+end, { expr = true, silent = true, desc = "Confirm Completion" })
+
+vim.api.nvim_create_user_command("TrimWhiteSpace", function()
+  local view = vim.fn.winsaveview()
+  vim.cmd([[%s/\s\+$//e]])
+  vim.fn.winrestview(view)
+end, {})
+
+vim.diagnostic.config({
+  severity_sort = true,
+  underline = true,
+  update_in_insert = false,
+  virtual_text = true,
+})
+
+vim.lsp.inlay_hint.enable(false)
+
+local lsp_servers = {
+  clangd = {
+    cmd = { "clangd" },
+    filetypes = { "c", "cpp", "objc", "objcpp", "cuda", "proto" },
+    root_markers = {
+      ".clangd",
+      ".clang-tidy",
+      ".clang-format",
+      "compile_commands.json",
+      "compile_flags.txt",
+      ".git",
+    },
+  },
+  cssls = {
+    cmd = { "vscode-css-language-server", "--stdio" },
+    filetypes = { "css", "scss", "less" },
+    root_markers = { "package.json", ".git" },
+  },
+  dockerls = {
+    cmd = { "docker-langserver", "--stdio" },
+    filetypes = { "dockerfile" },
+    root_markers = { "Dockerfile", ".git" },
+  },
+  docker_compose_language_service = {
+    cmd = { "docker-compose-language-service", "--stdio" },
+    filetypes = { "yaml.docker-compose" },
+    root_markers = { "docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml", ".git" },
+  },
+  html = {
+    cmd = { "vscode-html-language-server", "--stdio" },
+    filetypes = { "html" },
+    root_markers = { "package.json", ".git" },
+  },
+  jsonls = {
+    cmd = { "vscode-json-language-server", "--stdio" },
+    filetypes = { "json", "jsonc" },
+    root_markers = { "package.json", ".git" },
+  },
+  lua_ls = {
+    cmd = { "lua-language-server" },
+    filetypes = { "lua" },
+    root_markers = { { ".luarc.json", ".luarc.jsonc" }, ".git" },
+    settings = {
+      Lua = {
+        diagnostics = {
+          globals = { "vim" },
+        },
+        hint = {
+          enable = false,
+        },
+        workspace = {
+          checkThirdParty = false,
+        },
+      },
+    },
+  },
+  pyright = {
+    cmd = { "pyright-langserver", "--stdio" },
+    filetypes = { "python" },
+    root_markers = { "pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", ".git" },
+  },
+  rust_analyzer = {
+    cmd = { "rust-analyzer" },
+    filetypes = { "rust" },
+    root_markers = { "Cargo.toml", "rust-project.json", ".git" },
+  },
+  sourcekit = {
+    cmd = { "sourcekit-lsp" },
+    filetypes = { "swift", "objc", "objcpp" },
+    root_markers = { "Package.swift", "compile_commands.json", ".git" },
+  },
+  sqlls = {
+    cmd = { "sql-language-server", "up", "--method", "stdio" },
+    filetypes = { "sql", "mysql", "plsql" },
+    root_markers = { ".sqllsrc.json", ".git" },
+  },
+  tailwindcss = {
+    cmd = { "tailwindcss-language-server", "--stdio" },
+    filetypes = {
+      "astro",
+      "css",
+      "eruby",
+      "heex",
+      "html",
+      "javascript",
+      "javascriptreact",
+      "php",
+      "svelte",
+      "templ",
+      "typescript",
+      "typescriptreact",
+      "vue",
+    },
+    root_markers = {
+      "tailwind.config.js",
+      "tailwind.config.cjs",
+      "tailwind.config.ts",
+      "postcss.config.js",
+      "postcss.config.cjs",
+      "package.json",
+      ".git",
+    },
+  },
+  taplo = {
+    cmd = { "taplo", "lsp", "stdio" },
+    filetypes = { "toml" },
+    root_markers = { "taplo.toml", ".taplo.toml", "Cargo.toml", ".git" },
+  },
+  ts_ls = {
+    cmd = { "typescript-language-server", "--stdio" },
+    filetypes = {
+      "javascript",
+      "javascriptreact",
+      "javascript.jsx",
+      "typescript",
+      "typescriptreact",
+      "typescript.tsx",
+    },
+    root_markers = { "tsconfig.json", "jsconfig.json", "package.json", ".git" },
+  },
+}
+
+for name, config in pairs(lsp_servers) do
+  local executable = config.cmd and config.cmd[1]
+  if executable == nil or vim.fn.executable(executable) == 1 then
+    vim.lsp.config(name, config)
+    vim.lsp.enable(name)
+  end
+end
+
+local lsp_group = vim.api.nvim_create_augroup("native-lsp-config", { clear = true })
+
+vim.api.nvim_create_autocmd("LspAttach", {
+  group = lsp_group,
+  callback = function(args)
+    local bufnr = args.buf
+    local client = vim.lsp.get_client_by_id(args.data.client_id)
+    if client == nil then
+      return
+    end
+
+    local map = function(mode, lhs, rhs, desc)
+      vim.keymap.set(mode, lhs, rhs, { buffer = bufnr, silent = true, desc = desc })
+    end
+
+    if client:supports_method(vim.lsp.protocol.Methods.textDocument_completion) then
+      vim.lsp.completion.enable(true, client.id, bufnr, { autotrigger = true })
+    end
+
+    if client:supports_method(vim.lsp.protocol.Methods.textDocument_foldingRange) then
+      set_lsp_folds(bufnr)
+    end
+
+    if client:supports_method(vim.lsp.protocol.Methods.textDocument_codeLens) then
+      local codelens_group = vim.api.nvim_create_augroup("native-lsp-codelens-" .. bufnr, { clear = true })
+      vim.api.nvim_create_autocmd({ "BufEnter", "CursorHold", "InsertLeave" }, {
+        group = codelens_group,
+        buffer = bufnr,
+        callback = function()
+          vim.lsp.codelens.refresh({ bufnr = bufnr })
+        end,
+      })
+      vim.lsp.codelens.refresh({ bufnr = bufnr })
+      map("n", "<leader>cl", vim.lsp.codelens.run, "Run CodeLens")
+    end
+
+    map("n", "[g", vim.diagnostic.goto_prev, "Previous Diagnostic")
+    map("n", "]g", vim.diagnostic.goto_next, "Next Diagnostic")
+    map("n", "gd", vim.lsp.buf.definition, "Go To Definition")
+    map("n", "gy", vim.lsp.buf.type_definition, "Go To Type Definition")
+    map("n", "gi", vim.lsp.buf.implementation, "Go To Implementation")
+    map("n", "gr", function()
+      require("telescope.builtin").lsp_references()
+    end, "References")
+    map("n", "K", show_documentation, "Hover")
+
+    map("n", "<leader>rn", vim.lsp.buf.rename, "Rename Symbol")
+    map({ "n", "x" }, "<leader>f", function()
+      vim.lsp.buf.format({ async = true })
+    end, "Format")
+    map({ "n", "x" }, "<leader>A", function()
+      vim.lsp.buf.code_action()
+    end, "Code Action")
+    map("n", "<leader>Ac", function()
+      vim.lsp.buf.code_action()
+    end, "Code Action At Cursor")
+    map("n", "<leader>As", function()
+      vim.lsp.buf.code_action({
+        context = {
+          only = { "source" },
+          diagnostics = vim.diagnostic.get(bufnr),
+        },
+      })
+    end, "Source Action")
+    map("n", "<leader>qf", function()
+      vim.lsp.buf.code_action({
+        apply = true,
+        context = {
+          only = { "quickfix" },
+          diagnostics = vim.diagnostic.get(bufnr),
+        },
+      })
+    end, "Quick Fix")
+    map("n", "<leader>re", function()
+      vim.lsp.buf.code_action({
+        context = {
+          only = { "refactor" },
+          diagnostics = vim.diagnostic.get(bufnr),
+        },
+      })
+    end, "Refactor")
+    map({ "n", "x" }, "<leader>r", function()
+      vim.lsp.buf.code_action({
+        context = {
+          only = { "refactor" },
+          diagnostics = vim.diagnostic.get(bufnr),
+        },
+      })
+    end, "Refactor Selection")
+    map("n", "<leader>ld", function()
+      require("telescope.builtin").diagnostics({ bufnr = bufnr })
+    end, "Buffer Diagnostics")
+    map("n", "<leader>lo", function()
+      require("telescope.builtin").lsp_document_symbols()
+    end, "Document Symbols")
+    map("n", "<leader>ls", function()
+      require("telescope.builtin").lsp_dynamic_workspace_symbols()
+    end, "Workspace Symbols")
+    map("n", "<leader>li", function()
+      vim.cmd("checkhealth vim.lsp")
+    end, "LSP Health")
+
+    vim.api.nvim_buf_create_user_command(bufnr, "Format", function()
+      vim.lsp.buf.format({ async = true, bufnr = bufnr })
+    end, {})
+
+    vim.api.nvim_buf_create_user_command(bufnr, "Fold", function()
+      set_lsp_folds(bufnr)
+      vim.cmd("normal! zx")
+    end, { nargs = "?" })
+
+    vim.api.nvim_buf_create_user_command(bufnr, "OR", organize_imports, {})
+  end,
+})
 
 require('lualine').setup {
   options = {
