@@ -16,7 +16,7 @@ local defaults = {
     setl = "option",
     setlocal = "option",
   },
-  -- Add personal shortcuts as { "Description", "Ex command", "search tags" }.
+  -- Add personal shortcuts as { "Description", "Ex command", "search tags", "completion type" }.
   commands = {},
 }
 
@@ -63,6 +63,9 @@ local function user_commands()
       description = command.desc and command.desc ~= "" and command.desc or command.definition or "",
       tags = command.complete or "",
       source = "user",
+      completion = command.complete,
+      completion_arg = command.complete_arg,
+      nargs = command.nargs,
     }
   end
 
@@ -73,6 +76,9 @@ local function user_commands()
         description = command.desc and command.desc ~= "" and command.desc or command.definition or "",
         tags = command.complete or "",
         source = "buffer",
+        completion = command.complete,
+        completion_arg = command.complete_arg,
+        nargs = command.nargs,
       }
     end
   end
@@ -82,12 +88,13 @@ end
 
 local function custom_commands(config)
   return vim.tbl_map(function(command)
-    local description, name, tags = unpack(command)
+    local description, name, tags, completion = unpack(command)
     return {
       name = name:gsub("^:", ""),
       description = description,
       tags = tags or "",
       source = "custom",
+      completion = completion,
     }
   end, config.commands)
 end
@@ -119,8 +126,29 @@ local function command_entries(config)
   return entries
 end
 
-local function pick_parameter(command, completion_type, opts)
-  local ok, parameters = pcall(vim.fn.getcompletion, "", completion_type)
+local function completion_type(entry, config)
+  local configured = config.parameter_completions[entry.name]
+  if configured then
+    return configured
+  end
+
+  if entry.completion == "custom" or entry.completion == "customlist" then
+    if entry.completion_arg then
+      return entry.completion .. "," .. entry.completion_arg
+    end
+    return nil
+  end
+
+  -- Lua callbacks are intentionally opaque in nvim_get_commands(). Neovim's
+  -- command line still knows how to invoke them, so use that as the fallback.
+  if entry.completion and entry.completion ~= "<Lua function>" then
+    return entry.completion
+  end
+end
+
+local function pick_parameter(entry, completion, opts)
+  local command = entry.name
+  local ok, parameters = pcall(vim.fn.getcompletion, "", completion)
   if not ok or #parameters == 0 then
     vim.api.nvim_feedkeys(":" .. command .. " ", "n", false)
     return
@@ -147,6 +175,33 @@ local function pick_parameter(command, completion_type, opts)
   }):find()
 end
 
+local function continue_command(entry, opts)
+  local completion = completion_type(entry, opts)
+  if completion then
+    pick_parameter(entry, completion, opts)
+  else
+    vim.api.nvim_feedkeys(":" .. entry.name .. " ", "n", false)
+  end
+end
+
+local function execute_command(entry, opts)
+  -- Commands that declare one or more required arguments should open their
+  -- command line even when no picker-compatible completion is available.
+  if entry.nargs == "1" or entry.nargs == "+" then
+    continue_command(entry, opts)
+    return
+  end
+
+  local ok, result = pcall(vim.api.nvim_exec2, entry.name, { output = true })
+  if not ok then
+    notify(result, vim.log.levels.ERROR)
+  elseif result.output ~= "" then
+    vim.schedule(function()
+      notify(result.output)
+    end)
+  end
+end
+
 function M.open(opts)
   opts = vim.tbl_deep_extend("force", {}, options, opts or {})
   local entries = command_entries(opts)
@@ -167,23 +222,23 @@ function M.open(opts)
       results = entries,
       entry_maker = function(entry)
         return {
-          value = entry.name,
+          value = entry,
           display = string.format(":%-18s %s", entry.name, entry.description),
           ordinal = table.concat({ entry.name, entry.description, entry.tags, entry.source }, " "),
         }
       end,
     }),
     sorter = config.generic_sorter(opts),
-    attach_mappings = function(prompt_bufnr)
+    attach_mappings = function(prompt_bufnr, map)
       actions.select_default:replace(function()
         local selection = action_state.get_selected_entry()
         actions.close(prompt_bufnr)
-        local completion_type = opts.parameter_completions[selection.value]
-        if completion_type then
-          pick_parameter(selection.value, completion_type, opts)
-        else
-          vim.api.nvim_feedkeys(":" .. selection.value .. " ", "n", false)
-        end
+        execute_command(selection.value, opts)
+      end)
+      map({ "i", "n" }, "<Tab>", function()
+        local selection = action_state.get_selected_entry()
+        actions.close(prompt_bufnr)
+        continue_command(selection.value, opts)
       end)
       return true
     end,
