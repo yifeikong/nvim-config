@@ -177,12 +177,102 @@ require("lazy").setup({
 })
 
 require("ts_command_palette").setup()
-vim.keymap.set("n", "<leader>pc", "<cmd>TSCommandPalette<cr>", {
+vim.keymap.set("n", "<leader>p", "<cmd>TSCommandPalette<cr>", {
   silent = true,
   desc = "Command Palette",
 })
 
-vim.cmd.source("~/.dotfiles/vim/vimrc_base")
+-- Migrated from ~/.dotfiles/vim/vimrc_base. Keep editor preferences here so
+-- legacy mappings and plugin settings cannot override this configuration.
+vim.opt.scrolloff = 3
+vim.opt.magic = true
+vim.opt.cindent = true
+vim.opt.cinkeys:remove("0#")
+vim.opt.indentkeys:remove("0#")
+vim.opt.number = true
+vim.opt.relativenumber = false
+vim.opt.history = 1000
+vim.opt.undodir = vim.fn.expand("~/.vim/undodir")
+vim.opt.undofile = true
+
+vim.opt.fileencodings = { "ucs-bom", "utf-8", "cp936", "gb18030", "big5", "latin1" }
+vim.opt.backupcopy = "yes"
+
+vim.opt.wildmenu = true
+vim.opt.wildmode = "list:longest"
+vim.opt.wildignore:append({ "*/tmp/*", "*.so", "*.swp", "*.zip", "*.pyc", "*.o" })
+
+vim.opt.tabstop = 4
+vim.opt.shiftwidth = 4
+vim.opt.softtabstop = 4
+vim.opt.expandtab = true
+vim.opt.autoindent = true
+vim.opt.foldlevel = 99
+
+vim.opt.wrap = true
+vim.opt.ignorecase = true
+vim.opt.smartcase = true
+vim.opt.incsearch = true
+vim.opt.showmatch = true
+vim.opt.hlsearch = true
+
+vim.opt.cmdheight = 1
+vim.opt.linebreak = true
+vim.opt.cursorline = true
+vim.opt.textwidth = 0
+vim.opt.wrapmargin = 0
+vim.opt.formatoptions:append("m")
+vim.opt.formatoptions:append("B")
+vim.opt.formatoptions:append("j")
+vim.opt.breakat = ""
+vim.opt.whichwrap = "b,s"
+vim.opt.colorcolumn = "88"
+vim.opt.list = true
+vim.opt.listchars = {
+  tab = "▸ ",
+  trail = "·",
+  extends = ">",
+  precedes = "<",
+}
+
+vim.cmd("filetype plugin indent on")
+vim.cmd("syntax enable")
+
+local legacy_filetype_group = vim.api.nvim_create_augroup("legacy-filetype-preferences", { clear = true })
+
+vim.api.nvim_create_autocmd("FileType", {
+  group = legacy_filetype_group,
+  pattern = "go",
+  callback = function()
+    vim.opt_local.listchars = { tab = "  ", trail = "·", extends = ">", precedes = "<" }
+  end,
+})
+
+vim.api.nvim_create_autocmd("FileType", {
+  group = legacy_filetype_group,
+  pattern = { "yaml", "vue", "javascript", "javascriptreact", "typescript", "typescriptreact" },
+  callback = function()
+    vim.opt_local.shiftwidth = 2
+    vim.opt_local.tabstop = 2
+  end,
+})
+
+vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
+  group = legacy_filetype_group,
+  pattern = "*.impl",
+  command = "setfiletype cpp",
+})
+
+vim.api.nvim_create_autocmd("FileType", {
+  group = legacy_filetype_group,
+  pattern = { "xml", "json" },
+  callback = function(args)
+    if vim.fn.getfsize(vim.api.nvim_buf_get_name(args.buf)) > 1000000 then
+      vim.opt_local.syntax = "OFF"
+    end
+  end,
+})
+
 vim.opt.spell = true
 vim.opt.updatetime = 300
 vim.opt.signcolumn = "yes"
@@ -271,6 +361,51 @@ vim.api.nvim_create_user_command("TrimWhiteSpace", function()
   vim.cmd([[%s/\s\+$//e]])
   vim.fn.winrestview(view)
 end, {})
+
+-- Kept from vimrc_base: portable editing mappings. Plugin-specific mappings
+-- (BufferLine, Pangu, Isort, Tabularize, and renamer) are intentionally absent.
+vim.keymap.set("c", "w!!", "w !sudo tee %")
+vim.keymap.set("c", "x!!", "w !sudo tee %<CR><CR>:q!<CR>")
+
+vim.keymap.set("n", "<leader>+", "<cmd>enew<cr>", { silent = true, desc = "New Buffer" })
+vim.keymap.set("n", "<leader>j", "<cmd>%!jq<cr>", { silent = true, desc = "Format Buffer With jq" })
+vim.keymap.set("n", "<leader>m", "<cmd>TrimWhiteSpace<cr>", { silent = true, desc = "Trim Trailing Whitespace" })
+vim.keymap.set("n", "<leader>q", "<cmd>wq<cr>", { silent = true, desc = "Write And Quit" })
+vim.keymap.set("n", "<leader>s", "<cmd>set paste!<cr>", { silent = true, desc = "Toggle Paste Mode" })
+vim.keymap.set("n", "<leader>S", "<cmd>set spell!<cr>", { silent = true, desc = "Toggle Spell Check" })
+vim.keymap.set("n", "<leader>w", "<cmd>wa<cr>", { silent = true, desc = "Write All" })
+vim.keymap.set("n", "<leader>n", "<cmd>nohlsearch<cr>", { silent = true, desc = "Clear Search Highlight" })
+
+vim.api.nvim_create_autocmd("FileType", {
+  group = vim.api.nvim_create_augroup("legacy-python-mappings", { clear = true }),
+  pattern = "python",
+  callback = function(event)
+    vim.keymap.set("n", "<leader>B", "oimport ipdb; ipdb.set_trace()<Esc>", {
+      buffer = event.buf,
+      silent = true,
+      desc = "Insert ipdb Breakpoint",
+    })
+  end,
+})
+
+vim.keymap.set("n", "<F3>", ":%s/", { desc = "Substitute In Buffer" })
+vim.keymap.set("n", "g<F3>", ":s/", { desc = "Substitute In Line" })
+vim.keymap.set("n", "<F12>", ":e ++enc=utf-8<cr>", { silent = true, desc = "Reopen As UTF-8" })
+vim.keymap.set({ "n", "x" }, "/", "/\\v", { desc = "Very Magic Search" })
+vim.keymap.set("i", "<C-u>", "<Esc>viwUi", { desc = "Uppercase Word" })
+vim.keymap.set("n", "<C-]>", "g<C-]>", { desc = "Go To Tag" })
+vim.keymap.set("i", "<C-a>", "<Home>")
+vim.keymap.set("c", "<C-a>", "<Home>")
+vim.keymap.set("x", "<C-a>", "^")
+vim.keymap.set("i", "<C-e>", "<End>")
+vim.keymap.set("c", "<C-e>", "<End>")
+vim.keymap.set("x", "<C-e>", "$")
+vim.keymap.set("n", "<C-j>", "5j")
+vim.keymap.set("n", "<C-k>", "5k")
+vim.keymap.set("c", "<C-j>", "<t_kd>")
+vim.keymap.set("c", "<C-k>", "<t_ku>")
+vim.keymap.set("n", "q:", ":q")
+vim.keymap.set("c", "W", "w")
 
 vim.diagnostic.config({
   severity_sort = true,
